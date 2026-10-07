@@ -235,8 +235,9 @@
     }
 
     function spin() {
-      const items = getItems();
+      // 回転開始から結果確定までは、ボタンの無効化に加えてこのフラグでも押下を無視する
       if (spinning) return;
+      const items = getItems();
       if (items.length < 2) {
         resultEl.textContent = "項目を2つ以上入力してください";
         return;
@@ -267,9 +268,6 @@
         rotation %= TAU;
         const winner = items[indexAtPointer(items.length)];
         resultEl.textContent = `結果: ${winner}`;
-        spinning = false;
-        spinBtn.disabled = false;
-        itemsEl.disabled = false;
         if (removeWinnerEl.checked) {
           const lines = itemsEl.value.split("\n");
           const idx = lines.findIndex(s => s.trim() === winner);
@@ -278,6 +276,10 @@
           saveItems();
           draw();
         }
+        // 結果の表示と後処理がすべて終わってから受付を再開する
+        spinning = false;
+        spinBtn.disabled = false;
+        itemsEl.disabled = false;
       }
       requestAnimationFrame(frame);
     }
