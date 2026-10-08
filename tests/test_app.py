@@ -1,5 +1,6 @@
 """交通費精算シミュレーターの単体テスト（docs/02_design.md 5章に対応）"""
 import codecs
+import datetime
 import os
 import sys
 
@@ -56,7 +57,7 @@ class TestCalcTotal:
         assert app.calc_total([]) == 0
 
     def test_複数明細の合計(self):
-        records = [{"金額": 150}, {"金額": 4000}, {"金額": 580}]
+        records = [{"金額(円)": 150}, {"金額(円)": 4000}, {"金額(円)": 580}]
         assert app.calc_total(records) == 4730
 
 
@@ -76,29 +77,77 @@ def test_承認判定の境界値(total, expected_flag, expected_status):
 
 
 # ---------- 5.4 make_record ----------
-def test_明細の作成():
-    record = app.make_record("高松駅", "丸亀駅", "自家用車", distance_km=30)
-    assert record == {
-        "出発地": "高松駅",
-        "到着地": "丸亀駅",
-        "交通手段": "自家用車",
-        "距離(km)": 30,
-        "金額": 450,
-    }
+class TestMakeRecord:
+    def test_明細の作成(self):
+        record = app.make_record(
+            datetime.date(2026, 10, 8), "高松", "丸亀", "自家用車", distance_km=30
+        )
+        assert record == {
+            "利用日": "2026-10-08",
+            "出発地": "高松",
+            "到着地": "丸亀",
+            "交通手段": "自家用車",
+            "距離(km)": 30,
+            "金額(円)": 450,
+        }
+
+    def test_利用日は文字列でも指定できる(self):
+        record = app.make_record("2026-10-08", "高松", "丸亀", "自家用車", distance_km=30)
+        assert record["利用日"] == "2026-10-08"
+
+    def test_整数の距離は小数点を付けない(self):
+        record = app.make_record("2026-10-08", "高松", "丸亀", "自家用車", distance_km=30.0)
+        assert record["距離(km)"] == 30
+        assert isinstance(record["距離(km)"], int)
+
+    def test_電車は距離が空(self):
+        record = app.make_record("2026-10-08", "高松", "丸亀", "電車", train_fare=580)
+        assert record["距離(km)"] is None
+        assert record["金額(円)"] == 580
 
 
 # ---------- 5.5 records_to_csv ----------
+CSV_HEADER = "利用日,申請者名,部署,出発地,到着地,交通手段,距離(km),金額(円),承認ステータス"
+
+
+def _csv_lines(records, name="香川 太郎", department="営業部"):
+    """CSVを作り、BOMを除いた文字列を行ごとのリストで返す"""
+    return app.records_to_csv(records, name, department).decode("utf-8-sig").splitlines()
+
+
 class TestRecordsToCsv:
     def test_先頭にBOMが付く(self):
-        data = app.records_to_csv([])
+        data = app.records_to_csv([], "香川 太郎", "営業部")
         assert data.startswith(codecs.BOM_UTF8)
 
     def test_明細なしでもヘッダ行が出力される(self):
-        text = app.records_to_csv([]).decode("utf-8-sig")
-        assert text.splitlines()[0] == "出発地,到着地,交通手段,距離(km),金額"
+        assert _csv_lines([]) == [CSV_HEADER]
 
-    def test_明細が行として出力される(self):
-        record = app.make_record("高松駅", "丸亀駅", "自家用車", distance_km=30)
-        lines = app.records_to_csv([record]).decode("utf-8-sig").splitlines()
-        assert lines[0] == "出発地,到着地,交通手段,距離(km),金額"
-        assert lines[1] == "高松駅,丸亀駅,自家用車,30,450"
+    def test_要件の例どおりに出力される(self):
+        record = app.make_record("2026-10-08", "高松", "丸亀", "自家用車", distance_km=30)
+        lines = _csv_lines([record])
+        assert lines[0] == CSV_HEADER
+        assert lines[1] == "2026-10-08,香川 太郎,営業部,高松,丸亀,自家用車,30,450,自動承認"
+
+    def test_電車の距離は空欄(self):
+        record = app.make_record("2026-10-08", "高松", "丸亀", "電車", train_fare=580)
+        lines = _csv_lines([record], department="総務部")
+        assert lines[1] == "2026-10-08,香川 太郎,総務部,高松,丸亀,電車,,580,自動承認"
+
+    def test_基準額を超える申請はすべての行が要上長承認(self):
+        records = [
+            app.make_record("2026-10-08", "高松", "丸亀", "自家用車", distance_km=30),
+            app.make_record("2026-10-09", "丸亀", "坂出", "電車", train_fare=580),
+            app.make_record("2026-10-10", "坂出", "高松空港", "タクシー", distance_km=25),
+        ]
+        lines = _csv_lines(records, department="経理部")
+        assert len(lines) == 4
+        for line in lines[1:]:
+            cols = line.split(",")
+            assert cols[1] == "香川 太郎"
+            assert cols[2] == "経理部"
+            assert cols[8] == "要上長承認"
+
+    def test_選択肢にない部署はエラー(self):
+        with pytest.raises(ValueError):
+            app.records_to_csv([], "香川 太郎", "人事部")
