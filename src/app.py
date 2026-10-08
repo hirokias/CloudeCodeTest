@@ -5,6 +5,7 @@ CSV出力を行う Streamlit アプリ。
 起動方法: streamlit run src/app.py --server.port 8501
 """
 import csv
+import datetime
 import io
 import math
 from decimal import Decimal
@@ -28,8 +29,25 @@ TRANSPORT_TYPES = [TRAIN, TAXI, CAR]
 STATUS_AUTO = "自動承認"
 STATUS_NEEDS_APPROVAL = "要上長承認"
 
-# 明細（CSV・一覧表）の列名。この順番で出力する
-COLUMNS = ["出発地", "到着地", "交通手段", "距離(km)", "金額"]
+# 選択できる所属部署（要件定義書 機能A）
+DEPARTMENTS = ["営業部", "総務部", "経理部", "企画部"]
+
+# 画面の明細一覧に表示する列（明細1件ごとに異なる値を持つ項目）
+RECORD_COLUMNS = ["利用日", "出発地", "到着地", "交通手段", "距離(km)", "金額(円)"]
+
+# CSVファイルの列（要件定義書 5章の順番どおり）
+# 申請者名・部署・承認ステータスは申請全体で共通の値を各行に付ける
+CSV_COLUMNS = [
+    "利用日",
+    "申請者名",
+    "部署",
+    "出発地",
+    "到着地",
+    "交通手段",
+    "距離(km)",
+    "金額(円)",
+    "承認ステータス",
+]
 
 # 距離で計算する交通手段と、その1kmあたり単価の対応表
 RATE_PER_KM = {
@@ -65,8 +83,8 @@ def calc_fare(transport, distance_km=0, train_fare=0):
 
 
 def calc_total(records):
-    """明細の「金額」を合計した申請総額（円）を返す。"""
-    return sum(record["金額"] for record in records)
+    """明細の「金額(円)」を合計した申請総額（円）を返す。"""
+    return sum(record["金額(円)"] for record in records)
 
 
 def needs_approval(total):
@@ -82,27 +100,70 @@ def approval_status(total):
     return STATUS_NEEDS_APPROVAL if needs_approval(total) else STATUS_AUTO
 
 
-def make_record(departure, arrival, transport, distance_km=0, train_fare=0):
-    """入力値から明細1件分（辞書）を作る。金額はここで計算する。"""
+def _format_distance(transport, distance_km):
+    """明細に保存する距離の値を整える。
+
+    - 電車は距離を使わないため None（CSVでは空欄）とする。
+    - 整数の距離（例: 30.0）は小数点を付けずに 30 とする。
+    """
+    if transport == TRAIN:
+        return None
+    if float(distance_km).is_integer():
+        return int(distance_km)
+    return distance_km
+
+
+def make_record(use_date, departure, arrival, transport, distance_km=0, train_fare=0):
+    """入力値から明細1件分（辞書）を作る。金額はここで計算する。
+
+    - 利用日は date 型・"年-月-日" の文字列のどちらでも受け付け、
+      "年-月-日" の文字列にそろえて保存する。
+    - 距離の表示形式は _format_distance で整える。
+    """
+    # 金額を先に計算する（不正な交通手段や負の値はここでエラーになる）
+    amount = calc_fare(transport, distance_km, train_fare)
+
+    # 利用日を "年-月-日" の文字列にそろえる
+    if isinstance(use_date, datetime.date):
+        use_date = use_date.isoformat()
+
     return {
+        "利用日": use_date,
         "出発地": departure,
         "到着地": arrival,
         "交通手段": transport,
-        "距離(km)": distance_km,
-        "金額": calc_fare(transport, distance_km, train_fare),
+        "距離(km)": _format_distance(transport, distance_km),
+        "金額(円)": amount,
     }
 
 
-def records_to_csv(records):
+def records_to_csv(records, applicant_name, department):
     """明細をCSVのバイト列に変換する。
 
-    Excel で開いても文字化けしないよう、UTF-8（BOM付き）で出力する。
-    明細が空でもヘッダ行は出力する。
+    - 列は要件定義書 5章の順番（CSV_COLUMNS）とする。
+    - 申請者名・部署・承認ステータスは、すべての行に同じ値を出力する。
+      承認ステータスは明細全体の合計金額から判定する。
+    - Excel で開いても文字化けしないよう、UTF-8（BOM付き）で出力する。
+    - 明細が空でもヘッダ行は出力する。
+    - 選択肢にない部署は ValueError とする。
     """
+    if department not in DEPARTMENTS:
+        raise ValueError(f"選択肢にない部署です: {department}")
+
+    # 申請全体で共通の値（承認ステータスは合計金額から判定）
+    common = {
+        "申請者名": applicant_name,
+        "部署": department,
+        "承認ステータス": approval_status(calc_total(records)),
+    }
+
     buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=COLUMNS, lineterminator="\n")
+    # 距離が None の場合、DictWriter は空欄として書き出す
+    writer = csv.DictWriter(buffer, fieldnames=CSV_COLUMNS, lineterminator="\n")
     writer.writeheader()
-    writer.writerows(records)
+    for record in records:
+        # 明細の値に共通の値を加えて1行にする
+        writer.writerow({**record, **common})
     return buffer.getvalue().encode("utf-8-sig")
 
 
@@ -137,12 +198,20 @@ def main():
 
     st.divider()
 
+    # ----- 機能A：申請者情報の入力（申請全体で1回だけ入力） -----
+    st.subheader("申請者情報")
+    col_name, col_dept = st.columns(2)
+    applicant_name = col_name.text_input("申請者名", placeholder="例：香川 太郎")
+    department = col_dept.selectbox("所属部署", DEPARTMENTS)
+
     # ----- 機能A：移動明細の入力 -----
     st.subheader("移動明細の入力")
     # 交通手段によって入力項目（距離 / 運賃）が変わるため、フォームの外で選ばせる
     transport = st.radio("交通手段", TRANSPORT_TYPES, horizontal=True)
 
     with st.form("input_form", clear_on_submit=True):
+        # 利用日の初期値は当日とする
+        use_date = st.date_input("利用日", value=datetime.date.today())
         departure = st.text_input("出発地")
         arrival = st.text_input("到着地")
         distance_km = 0.0
@@ -164,7 +233,9 @@ def main():
             st.error("出発地と到着地を入力してください。")
         else:
             records.append(
-                make_record(departure, arrival, transport, distance_km, train_fare)
+                make_record(
+                    use_date, departure, arrival, transport, distance_km, train_fare
+                )
             )
             # 合計金額の表示を更新するため、画面を再描画する
             st.rerun()
@@ -172,16 +243,21 @@ def main():
     # ----- 機能C：明細一覧とCSV出力 -----
     st.subheader("明細一覧")
     if records:
+        # 電車の距離（None）は「None」と表示されないよう空欄にする
         st.dataframe(
-            pd.DataFrame(records, columns=COLUMNS),
+            pd.DataFrame(records, columns=RECORD_COLUMNS).fillna(""),
             hide_index=True,
             use_container_width=True,
         )
+        # 申請者名が空のままCSVを出力しないよう、未入力時はボタンを押せなくする
+        if not applicant_name:
+            st.warning("CSVをダウンロードするには、申請者名を入力してください。")
         st.download_button(
             "CSVダウンロード",
-            data=records_to_csv(records),
+            data=records_to_csv(records, applicant_name, department),
             file_name="交通費精算.csv",
             mime="text/csv",
+            disabled=not applicant_name,
         )
         if st.button("明細をクリア"):
             st.session_state.records = []
