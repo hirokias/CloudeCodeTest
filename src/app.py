@@ -10,8 +10,8 @@ import math
 from decimal import Decimal
 
 # ===== 社内規定の値（docs/01_requirements.md より） =====
-# 自家用車は 1km あたり 20円（旧仕様の15円は使わない）
-CAR_RATE_PER_KM = 20
+# 自家用車は 1km あたり 15円（旧仕様の20円は使わない）
+CAR_RATE_PER_KM = 15
 # タクシーは一律 1km あたり 400円
 TAXI_RATE_PER_KM = 400
 # 1回の申請総額がこの金額を「超える」と上長承認が必要
