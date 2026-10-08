@@ -13,17 +13,17 @@ import app  # noqa: E402
 
 # ---------- 5.1 calc_fare ----------
 class TestCalcFare:
-    def test_自家用車は1kmあたり20円(self):
-        assert app.calc_fare("自家用車", distance_km=10) == 200
+    def test_自家用車は1kmあたり15円(self):
+        assert app.calc_fare("自家用車", distance_km=10) == 150
 
     def test_自家用車_距離0kmは0円(self):
         assert app.calc_fare("自家用車", distance_km=0) == 0
 
     def test_自家用車_小数距離(self):
-        assert app.calc_fare("自家用車", distance_km=12.5) == 250
+        assert app.calc_fare("自家用車", distance_km=12.5) == 187
 
     def test_自家用車_1円未満は切り捨て(self):
-        assert app.calc_fare("自家用車", distance_km=0.33) == 6
+        assert app.calc_fare("自家用車", distance_km=0.33) == 4
 
     def test_タクシーは1kmあたり400円(self):
         assert app.calc_fare("タクシー", distance_km=10) == 4000
@@ -56,8 +56,8 @@ class TestCalcTotal:
         assert app.calc_total([]) == 0
 
     def test_複数明細の合計(self):
-        records = [{"金額": 200}, {"金額": 4000}, {"金額": 580}]
-        assert app.calc_total(records) == 4780
+        records = [{"金額": 150}, {"金額": 4000}, {"金額": 580}]
+        assert app.calc_total(records) == 4730
 
 
 # ---------- 5.3 needs_approval / approval_status（境界値） ----------
@@ -83,7 +83,7 @@ def test_明細の作成():
         "到着地": "丸亀駅",
         "交通手段": "自家用車",
         "距離(km)": 30,
-        "金額": 600,
+        "金額": 450,
     }
 
 
@@ -101,4 +101,4 @@ class TestRecordsToCsv:
         record = app.make_record("高松駅", "丸亀駅", "自家用車", distance_km=30)
         lines = app.records_to_csv([record]).decode("utf-8-sig").splitlines()
         assert lines[0] == "出発地,到着地,交通手段,距離(km),金額"
-        assert lines[1] == "高松駅,丸亀駅,自家用車,30,600"
+        assert lines[1] == "高松駅,丸亀駅,自家用車,30,450"
