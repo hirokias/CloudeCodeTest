@@ -100,13 +100,25 @@ def approval_status(total):
     return STATUS_NEEDS_APPROVAL if needs_approval(total) else STATUS_AUTO
 
 
+def _format_distance(transport, distance_km):
+    """明細に保存する距離の値を整える。
+
+    - 電車は距離を使わないため None（CSVでは空欄）とする。
+    - 整数の距離（例: 30.0）は小数点を付けずに 30 とする。
+    """
+    if transport == TRAIN:
+        return None
+    if float(distance_km).is_integer():
+        return int(distance_km)
+    return distance_km
+
+
 def make_record(use_date, departure, arrival, transport, distance_km=0, train_fare=0):
     """入力値から明細1件分（辞書）を作る。金額はここで計算する。
 
     - 利用日は date 型・"年-月-日" の文字列のどちらでも受け付け、
       "年-月-日" の文字列にそろえて保存する。
-    - 電車は距離を使わないため、距離は None（CSVでは空欄）とする。
-    - 距離が整数（例: 30.0）の場合は小数点を付けずに 30 として保存する。
+    - 距離の表示形式は _format_distance で整える。
     """
     # 金額を先に計算する（不正な交通手段や負の値はここでエラーになる）
     amount = calc_fare(transport, distance_km, train_fare)
@@ -115,20 +127,12 @@ def make_record(use_date, departure, arrival, transport, distance_km=0, train_fa
     if isinstance(use_date, datetime.date):
         use_date = use_date.isoformat()
 
-    # 距離の表示形式を整える
-    if transport == TRAIN:
-        distance = None
-    elif float(distance_km).is_integer():
-        distance = int(distance_km)
-    else:
-        distance = distance_km
-
     return {
         "利用日": use_date,
         "出発地": departure,
         "到着地": arrival,
         "交通手段": transport,
-        "距離(km)": distance,
+        "距離(km)": _format_distance(transport, distance_km),
         "金額(円)": amount,
     }
 
