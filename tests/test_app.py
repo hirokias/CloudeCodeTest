@@ -15,12 +15,12 @@ import app  # noqa: E402
 
 # ---------- 機能A：交通費の計算 ----------
 class TestCalculateFare:
-    def test_自家用車は1kmあたり15円(self):
-        assert app.calculate_fare("自家用車", distance_km=10) == 150
+    def test_自家用車は1kmあたり20円(self):
+        assert app.calculate_fare("自家用車", distance_km=10) == 200
 
     def test_自家用車の小数距離は1円未満切り捨て(self):
-        # 12.3km × 15円 = 184.5円 → 184円
-        assert app.calculate_fare("自家用車", distance_km=12.3) == 184
+        # 12.34km × 20円 = 246.8円 → 246円
+        assert app.calculate_fare("自家用車", distance_km=12.34) == 246
 
     def test_タクシーは1kmあたり400円(self):
         assert app.calculate_fare("タクシー", distance_km=5) == 2000
@@ -56,14 +56,21 @@ class TestApproval:
         assert app.approval_status(10_001) == "要上長承認"
 
     def test_複数明細の合計で判定する(self):
-        # タクシー20km(8,000円) + 自家用車150km(2,250円) = 10,250円
+        # タクシー20km(8,000円) + 自家用車150km(3,000円) = 11,000円
         items = [
             app.make_item("本社", "A社", "タクシー", distance_km=20),
             app.make_item("A社", "B社", "自家用車", distance_km=150),
         ]
         total = app.calculate_total(items)
-        assert total == 10_250
+        assert total == 11_000
         assert app.approval_status(total) == "要上長承認"
+
+    def test_自家用車500kmはちょうど10000円で自動承認(self):
+        # 新単価20円/km × 500km = 10,000円（基準額ちょうど）
+        items = [app.make_item("本社", "C社", "自家用車", distance_km=500)]
+        total = app.calculate_total(items)
+        assert total == 10_000
+        assert app.approval_status(total) == "自動承認"
 
     def test_明細なしは0円で自動承認(self):
         assert app.calculate_total([]) == 0
@@ -98,7 +105,7 @@ class TestOutput:
         assert data.startswith(b"\xef\xbb\xbf")
         rows = list(csv.reader(io.StringIO(data.decode("utf-8-sig"))))
         assert rows[0] == app.COLUMNS
-        assert rows[1] == ["高松", "丸亀", "自家用車", "30", "450"]
+        assert rows[1] == ["高松", "丸亀", "自家用車", "30", "600"]
 
     def test_明細なしでもCSVはヘッダーのみ出力(self):
         rows = list(csv.reader(io.StringIO(app.items_to_csv([]).decode("utf-8-sig"))))
