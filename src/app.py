@@ -17,8 +17,12 @@ TAXI_RATE_PER_KM = 400
 # 1回の申請総額がこの金額を「超える」と上長承認が必要
 APPROVAL_THRESHOLD = 10000
 
-# 選択できる交通手段
-TRANSPORT_TYPES = ["電車", "タクシー", "自家用車"]
+# 交通手段の名称（画面・CSV・計算で共通に使う）
+TRAIN = "電車"
+TAXI = "タクシー"
+CAR = "自家用車"
+# 選択できる交通手段（画面の並び順）
+TRANSPORT_TYPES = [TRAIN, TAXI, CAR]
 
 # 承認ステータスの表示文字列
 STATUS_AUTO = "自動承認"
@@ -29,8 +33,8 @@ COLUMNS = ["出発地", "到着地", "交通手段", "距離(km)", "金額"]
 
 # 距離で計算する交通手段と、その1kmあたり単価の対応表
 RATE_PER_KM = {
-    "自家用車": CAR_RATE_PER_KM,
-    "タクシー": TAXI_RATE_PER_KM,
+    CAR: CAR_RATE_PER_KM,
+    TAXI: TAXI_RATE_PER_KM,
 }
 
 
@@ -41,7 +45,7 @@ def calc_fare(transport, distance_km=0, train_fare=0):
     - 電車: 利用者が入力した運賃をそのまま使う（距離は使わない）。
     - 負の値や未定義の交通手段は ValueError とする。
     """
-    if transport == "電車":
+    if transport == TRAIN:
         # 電車は運賃をそのまま採用する
         if train_fare < 0:
             raise ValueError("運賃は0円以上で入力してください。")
@@ -143,7 +147,7 @@ def main():
         arrival = st.text_input("到着地")
         distance_km = 0.0
         train_fare = 0
-        if transport == "電車":
+        if transport == TRAIN:
             train_fare = st.number_input("運賃（円）", min_value=0, step=10)
         else:
             rate = RATE_PER_KM[transport]
